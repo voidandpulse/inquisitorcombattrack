@@ -1,7 +1,7 @@
-# Sidra's Combat Log
+# Inquisitor's Combat Log
 
-A damage calculator for a single Pathfinder 1e character: Sidra, a level 16
-half-elf Inquisitor (Sworn of the Eldest), sworn to Nyrissa.
+A damage calculator for a single Pathfinder 1e character: a level 16
+half-elf Inquisitor (Sworn of the Eldest), sworn to a homebrew fae Eldest.
 
 It exists because her damage is a fistful of d6s. Weapon dice, 4d6 of greater
 bane, 2d6 holy, mage strike scaling, and a bard who hands out numbers mid-round
@@ -82,7 +82,7 @@ All three read `strikes.html` directly and exit non-zero on failure.
 ## Scope
 
 This is built around one character's sheet, not a general Pathfinder
-calculator. Bonuses that are static for Sidra are baked in; the ones that vary
+calculator. Bonuses that are static for it are baked in; the ones that vary
 round to round are inputs. Known gaps: the bard's mythic inspire competence and
 marked-target bonuses are entered by hand rather than toggled, and Spiritual
 Weapon needs a d8 the physics tray doesn't have yet, so it falls back to a
