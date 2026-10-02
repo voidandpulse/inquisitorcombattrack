@@ -7,7 +7,7 @@
 :root{
   --bg:#EDF0F4; --panel:#FFFFFF; --panel2:#F5F7FA; --sunk:#E6EAEF;
   --fg:#161C24; --dim:#5B6672; --faint:#8A95A1;
-  --line:#D3DAE2; --line2:#E2E7ED;
+  --tray:#E4E8EE; --line:#D3DAE2; --line2:#E2E7ED;
   --accent:#9E004F; --accent-soft:rgba(158,0,79,.09); --accent-line:rgba(158,0,79,.3);
   --crit:#8A5A00; --crit-soft:rgba(138,90,0,.11); --crit-line:rgba(138,90,0,.35);
   --sup:#9AA4AF; --felt:#DFE4EA;
@@ -18,7 +18,7 @@
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
   --bg:#0D1117; --panel:#151B23; --panel2:#1B222B; --sunk:#10161D;
   --fg:#E2E8F0; --dim:#8F9BA9; --faint:#6E7A88;
-  --line:#2A3440; --line2:#222B35;
+  --tray:#0A0E13; --line:#2A3440; --line2:#222B35;
   --accent:#FF5C9E; --accent-soft:rgba(255,92,158,.13); --accent-line:rgba(255,92,158,.35);
   --crit:#E6B74A; --crit-soft:rgba(230,183,74,.13); --crit-line:rgba(230,183,74,.35);
   --sup:#5F6B78; --felt:#121920;
@@ -27,7 +27,7 @@
 :root[data-theme="dark"]{
   --bg:#0D1117; --panel:#151B23; --panel2:#1B222B; --sunk:#10161D;
   --fg:#E2E8F0; --dim:#8F9BA9; --faint:#6E7A88;
-  --line:#2A3440; --line2:#222B35;
+  --tray:#0A0E13; --line:#2A3440; --line2:#222B35;
   --accent:#FF5C9E; --accent-soft:rgba(255,92,158,.13); --accent-line:rgba(255,92,158,.35);
   --crit:#E6B74A; --crit-soft:rgba(230,183,74,.13); --crit-line:rgba(230,183,74,.35);
   --sup:#5F6B78; --felt:#121920;
@@ -333,7 +333,8 @@ function launch(e){
   log.push(e);
   var req = e.miss ? [] : request(e.kind, e.energyLvl, e.s);
   if(e.miss){ e.pending=false; renderLog(); return; }
-  var canUse3d = mode3d && ready3d && window.__DICE3D && req.every(function(g){return g.sides===6});
+  var sup = (window.__DICE3D && window.__DICE3D.supports) || [6];
+  var canUse3d = mode3d && ready3d && window.__DICE3D && req.every(function(g){return sup.indexOf(g.sides||6)>=0});
   if(canUse3d){
     renderLog();
     window.__DICE3D.roll(req, DICE, function(res){ fill(e,res); });
@@ -506,209 +507,578 @@ return { ready:function(){ ready3d=true; setMode(prefer3d); } };
 
 
 <style>
-#tray .scene{position:relative;height:262px;overflow:hidden;perspective:1050px;perspective-origin:50% 36%}
-#tray .table{position:absolute;left:50%;top:63%;width:0;height:0;transform-style:preserve-3d;transform:rotateX(62deg)}
-#tray .die{position:absolute;left:0;top:0;width:34px;height:34px;margin:-17px 0 0 -17px;transform-style:preserve-3d}
-#tray .face{position:absolute;inset:0;border-radius:6px;background:var(--fc);
-  box-shadow:inset 0 0 0 1px rgba(0,0,0,.22), inset 0 3px 7px rgba(255,255,255,.22), inset 0 -3px 7px rgba(0,0,0,.14)}
-#tray .pip{position:absolute;width:19%;height:19%;border-radius:50%;background:var(--pc);transform:translate(-50%,-50%)}
-#tray .sh{position:absolute;left:0;top:0;border-radius:50%;background:#000;margin:-17px 0 0 -17px;
-  width:34px;height:34px;filter:blur(4px)}
+#tray{position:relative;width:100%;height:190px;margin:0 0 10px;overflow:hidden;
+  border:1px solid var(--line);background:var(--tray);border-radius:3px}
+#tray canvas{display:block;width:100%;height:100%}
+@media (max-width:620px){#tray{height:150px}}
 </style>
+
+<!-- physics and rendering: three from cdnjs as a classic script, cannon-es from
+     jsdelivr as a module. Both hosts are on the artifact CSP allowlist. -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/0.160.0/three.min.js"></script>
 <script>
-/* ============ dice tray: own rigid-body sim, CSS 3D cubes, no libraries ============ */
+  /* the module below is deferred, so the page waits on this promise rather than
+     on script order; if it never resolves, the log falls back to fast dice */
+  window.__CANNON_READY__ = new Promise(function(res, rej){
+    window.__CANNON_RESOLVE__ = res;
+    setTimeout(function(){ rej(new Error('cannon-es did not load')); }, 12000);
+  });
+  window.__CANNON_READY__.catch(function(){});
+</script>
+<script type="module">
+  import * as CANNON from 'https://cdn.jsdelivr.net/npm/cannon-es@0.20.0/dist/cannon-es.js';
+  window.__CANNON_RESOLVE__(CANNON);
+</script>
+<script>
+/* ---- 3D dice tray: three.js for the picture, cannon-es for the motion ----
+   Exposes the same window.__DICE3D contract the combat log already calls:
+     roll(groups, palette, done)   groups: [{key, count, sides}]
+     clear(), theme(), supports[]
+   Falls back silently if either library is missing, so the page still works. */
 (function(){
 'use strict';
-var S=34, H=S/2, ZL=96, G=2600, E=.3, MU=.36;
-/* local face normals -> pip value; opposite faces sum to 7 */
-var FACES=[[1,0,0,1],[-1,0,0,6],[0,1,0,2],[0,-1,0,5],[0,0,1,3],[0,0,-1,4]];
-/* phys axis -> css cube face, because css y points down and our depth axis is css y */
-var CSSFACE={1:'px',6:'nx',2:'pz',5:'nz',3:'ny',4:'py'};
-var FACETF={px:'rotateY(90deg) translateZ(17px)',nx:'rotateY(-90deg) translateZ(17px)',
-  py:'rotateX(-90deg) translateZ(17px)',ny:'rotateX(90deg) translateZ(17px)',
-  pz:'translateZ(17px)',nz:'rotateY(180deg) translateZ(17px)'};
-var PIPS={1:[[50,50]],2:[[26,26],[74,74]],3:[[26,26],[50,50],[74,74]],
-  4:[[26,26],[74,26],[26,74],[74,74]],5:[[26,26],[74,26],[50,50],[26,74],[74,74]],
-  6:[[26,26],[74,26],[26,50],[74,50],[26,74],[74,74]]};
-var CORNERS=[];(function(){for(var a=-1;a<2;a+=2)for(var b=-1;b<2;b+=2)for(var c=-1;c<2;c+=2)CORNERS.push([a*H,b*H,c*H]);})();
 
-var ORD=[0,1,2,3,4,5,6,7];   /* contact order is shuffled each step: a fixed order biases the solver */
-function qmul(a,b){return[a[0]*b[0]-a[1]*b[1]-a[2]*b[2]-a[3]*b[3],
-  a[0]*b[1]+a[1]*b[0]+a[2]*b[3]-a[3]*b[2],
-  a[0]*b[2]-a[1]*b[3]+a[2]*b[0]+a[3]*b[1],
-  a[0]*b[3]+a[1]*b[2]-a[2]*b[1]+a[3]*b[0]];}
-function qnorm(q){var l=Math.hypot(q[0],q[1],q[2],q[3])||1;return[q[0]/l,q[1]/l,q[2]/l,q[3]/l];}
-function qmat(q){var w=q[0],x=q[1],y=q[2],z=q[3];
-  return[[1-2*(y*y+z*z),2*(x*y-w*z),2*(x*z+w*y)],
-         [2*(x*y+w*z),1-2*(x*x+z*z),2*(y*z-w*x)],
-         [2*(x*z-w*y),2*(y*z+w*x),1-2*(x*x+y*y)]];}
-function mv(m,v){return[m[0][0]*v[0]+m[0][1]*v[1]+m[0][2]*v[2],
-  m[1][0]*v[0]+m[1][1]*v[1]+m[1][2]*v[2], m[2][0]*v[0]+m[2][1]*v[1]+m[2][2]*v[2]];}
-function cross(a,b){return[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]];}
-function randQ(){ /* Shoemake: a uniformly distributed random rotation */
+/* ---------- solids ---------- */
+var PHI=(1+Math.sqrt(5))/2;
+function nrm(v){var l=Math.hypot(v[0],v[1],v[2]);return[v[0]/l,v[1]/l,v[2]/l];}
+function fNormal(s,f){var v=f.idx.map(function(i){return s.vertices[i]});
+  var a=[v[1][0]-v[0][0],v[1][1]-v[0][1],v[1][2]-v[0][2]],
+      b=[v[2][0]-v[0][0],v[2][1]-v[0][1],v[2][2]-v[0][2]];
+  return nrm([a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]]);}
+function fCentre(s,f){var v=f.idx.map(function(i){return s.vertices[i]});
+  return [v.reduce(function(t,p){return t+p[0]},0)/v.length,
+          v.reduce(function(t,p){return t+p[1]},0)/v.length,
+          v.reduce(function(t,p){return t+p[2]},0)/v.length];}
+
+/* A real d4 carries three numerals per face and is read at the apex, because a
+   resting tetrahedron has a vertex up, not a face. So the numbers belong to the
+   VERTICES; each face prints the number of each of its corners. */
+var d4={sides:4,readFrom:'apex',vertexValues:[1,2,3,4],
+  vertices:[[1,1,1],[-1,-1,1],[-1,1,-1],[1,-1,-1]],
+  faces:[{idx:[1,3,2],value:1},{idx:[0,2,3],value:2},{idx:[0,3,1],value:3},{idx:[0,1,2],value:4}]};
+var d6={sides:6,readFrom:'top',pips:true,
+  vertices:[[-1,-1,-1],[1,-1,-1],[1,1,-1],[-1,1,-1],[-1,-1,1],[1,-1,1],[1,1,1],[-1,1,1]],
+  faces:[{idx:[1,2,6,5],value:1},{idx:[0,4,7,3],value:6},{idx:[3,7,6,2],value:2},
+         {idx:[0,1,5,4],value:5},{idx:[4,5,6,7],value:3},{idx:[0,3,2,1],value:4}]};
+var d8={sides:8,readFrom:'top',vertices:[[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]],
+  faces:[{idx:[0,2,4],value:0},{idx:[2,1,4],value:0},{idx:[1,3,4],value:0},{idx:[3,0,4],value:0},
+         {idx:[2,0,5],value:0},{idx:[1,2,5],value:0},{idx:[3,1,5],value:0},{idx:[0,3,5],value:0}]};
+function mkD10(){
+  var TH=2*Math.PI/5;
+  function up(i,c){return[Math.cos(TH*i),Math.sin(TH*i),c]}
+  function lo(i,c){return[Math.cos(TH*i+TH/2),Math.sin(TH*i+TH/2),-c]}
+  function err(c){var A=[0,0,1],P=up(0,c),Q=up(1,c),R=lo(0,c);
+    var a=[P[0]-A[0],P[1]-A[1],P[2]-A[2]],b=[Q[0]-A[0],Q[1]-A[1],Q[2]-A[2]];
+    var n=[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]];
+    return n[0]*(R[0]-A[0])+n[1]*(R[1]-A[1])+n[2]*(R[2]-A[2]);}
+  var l=0.01,h=0.99,m;
+  for(var i=0;i<160;i++){m=(l+h)/2; if(err(l)*err(m)<=0) h=m; else l=m;}
+  var c=(l+h)/2, V=[[0,0,1],[0,0,-1]], j;
+  for(j=0;j<5;j++) V.push(up(j,c));
+  for(j=0;j<5;j++) V.push(lo(j,c));
+  var U=function(i){return 2+(i%5)}, L=function(i){return 7+(i%5)}, F=[];
+  for(j=0;j<5;j++) F.push({idx:[0,U(j),L(j),U(j+1)],value:0});
+  for(j=0;j<5;j++) F.push({idx:[1,L(j),U(j+1),L(j+1)],value:0});
+  return {sides:10,readFrom:'top',vertices:V,faces:F};
+}
+var d10=mkD10();
+var p12=1/PHI;
+var d12={sides:12,readFrom:'top',vertices:[
+  [-1,-1,-1],[-1,-1,1],[-1,1,-1],[-1,1,1],[1,-1,-1],[1,-1,1],[1,1,-1],[1,1,1],
+  [0,-p12,-PHI],[0,-p12,PHI],[0,p12,-PHI],[0,p12,PHI],
+  [-p12,-PHI,0],[-p12,PHI,0],[p12,-PHI,0],[p12,PHI,0],
+  [-PHI,0,-p12],[PHI,0,-p12],[-PHI,0,p12],[PHI,0,p12]],
+  faces:[[3,11,7,15,13],[7,19,17,6,15],[17,4,8,10,6],[8,0,16,2,10],[0,12,1,18,16],
+         [6,10,2,13,15],[2,16,18,3,13],[18,1,9,11,3],[4,14,12,0,8],[11,9,5,19,7],
+         [19,5,14,4,17],[1,12,14,5,9]].map(function(f){return{idx:f,value:0}})};
+var d20={sides:20,readFrom:'top',vertices:[
+  [-1,PHI,0],[1,PHI,0],[-1,-PHI,0],[1,-PHI,0],[0,-1,PHI],[0,1,PHI],
+  [0,-1,-PHI],[0,1,-PHI],[PHI,0,-1],[PHI,0,1],[-PHI,0,-1],[-PHI,0,1]],
+  faces:[[0,11,5],[0,5,1],[0,1,7],[0,7,10],[0,10,11],[1,5,9],[5,11,4],[11,10,2],
+         [10,7,6],[7,1,8],[3,9,4],[3,4,2],[3,2,6],[3,6,8],[3,8,9],[4,9,5],
+         [2,4,11],[6,2,10],[8,6,7],[9,8,1]].map(function(f){return{idx:f,value:0}})};
+
+function fixWinding(s){s.faces.forEach(function(f){var n=fNormal(s,f),c=fCentre(s,f);
+  if(c[0]*n[0]+c[1]*n[1]+c[2]*n[2]<0) f.idx.reverse();});return s;}
+function pairValues(s){           /* opposite faces sum to sides+1, as on a real die */
+  var n=s.faces.map(function(f){return fNormal(s,f)}),taken=[],next=1;
+  for(var i=0;i<s.faces.length;i++){
+    if(taken[i])continue;
+    var best=-1,bd=2;
+    for(var j=0;j<s.faces.length;j++){ if(j===i||taken[j])continue;
+      var d=n[i][0]*n[j][0]+n[i][1]*n[j][1]+n[i][2]*n[j][2];
+      if(d<bd){bd=d;best=j;} }
+    s.faces[i].value=next; s.faces[best].value=s.sides+1-next;
+    taken[i]=taken[best]=true; next++;
+  } return s;
+}
+function scaleToCircumradius(s){  /* match the dice on overall size, the way a real
+     set does. Normalising on face distance instead makes the d4 enormous,
+     because a tetrahedron's circumradius is three times its inradius. */
+  var m=0;
+  s.vertices.forEach(function(v){ m=Math.max(m, Math.hypot(v[0],v[1],v[2])); });
+  var k = s.sides===6 ? 1.08 : s.sides===4 ? 0.94 : 1;   /* cubes read small, d4s large */
+  s.vertices=s.vertices.map(function(v){return[v[0]/m*k,v[1]/m*k,v[2]/m*k]});
+  return s;
+}
+var SHAPES={4:d4,6:d6,8:d8,10:d10,12:d12,20:d20};
+/* order matters: winding first, or faces pair against inward normals */
+Object.keys(SHAPES).forEach(function(k){fixWinding(SHAPES[k])});
+[d8,d10,d12,d20].forEach(pairValues);
+Object.keys(SHAPES).forEach(function(k){scaleToCircumradius(SHAPES[k])});
+Object.keys(SHAPES).forEach(function(k){
+  var s=SHAPES[k];
+  s.normals=s.faces.map(function(f){return fNormal(s,f)});
+});
+
+/* ---------- one 2D layout per face, shared by the texture and the UVs, so a
+     numeral is drawn exactly where the geometry puts that corner ---------- */
+var layoutCache={};
+function faceLayout(sides){
+  if(layoutCache[sides]) return layoutCache[sides];
+  var s=SHAPES[sides];
+  var out=s.faces.map(function(f,i){
+    var nv=s.normals[i], c=fCentre(s,f);
+    /* sit the numeral upright on the face's first edge: deterministic, so the
+       numbers look placed rather than scattered at random angles */
+    var v0=s.vertices[f.idx[0]], v1=s.vertices[f.idx[1]];
+    var ex=nrm([v1[0]-v0[0], v1[1]-v0[1], v1[2]-v0[2]]);
+    var ax=ex;
+    var ay=nrm([nv[1]*ax[2]-nv[2]*ax[1], nv[2]*ax[0]-nv[0]*ax[2], nv[0]*ax[1]-nv[1]*ax[0]]);
+    var pts=f.idx.map(function(vi){
+      var d=[s.vertices[vi][0]-c[0], s.vertices[vi][1]-c[1], s.vertices[vi][2]-c[2]];
+      return [d[0]*ax[0]+d[1]*ax[1]+d[2]*ax[2], d[0]*ay[0]+d[1]*ay[1]+d[2]*ay[2]];
+    });
+    var rad=Math.max.apply(null,pts.map(function(p){return Math.hypot(p[0],p[1])}));
+    var fit=0.62/rad;
+    /* tile coordinates, 0..1 within the face's own tile, y downward as canvas draws */
+    var tile=pts.map(function(p){ return [0.5+p[0]*fit, 0.5-p[1]*fit]; });
+    return { tile:tile, fit:fit, pts:pts };
+  });
+  layoutCache[sides]=out;
+  return out;
+}
+
+/* ---------- face textures ---------- */
+var PIPS={1:[[50,50]],2:[[28,28],[72,72]],3:[[28,28],[50,50],[72,72]],
+  4:[[28,28],[72,28],[28,72],[72,72]],5:[[28,28],[72,28],[50,50],[28,72],[72,72]],
+  6:[[28,28],[72,28],[28,50],[72,50],[28,72],[72,72]]};
+var texCache={};
+function faceTexture(THREE, sides, faceCol, inkCol){
+  var key=sides+'|'+faceCol+'|'+inkCol;
+  if(texCache[key]) return texCache[key];
+  var s=SHAPES[sides], n=s.faces.length, cols=Math.ceil(Math.sqrt(n)), rows=Math.ceil(n/cols);
+  var T=192, cv=document.createElement('canvas');
+  cv.width=cols*T; cv.height=rows*T;
+  var g=cv.getContext('2d');
+  g.fillStyle=faceCol; g.fillRect(0,0,cv.width,cv.height);
+  for(var i=0;i<n;i++){
+    var cx=(i%cols)*T, cy=Math.floor(i/cols)*T, v=s.faces[i].value;
+    g.save(); g.translate(cx,cy);
+    g.fillStyle=inkCol;
+    if(s.pips){
+      var pts=PIPS[v]||[];
+      for(var p=0;p<pts.length;p++){
+        g.beginPath();
+        g.arc(pts[p][0]/100*T, pts[p][1]/100*T, T*0.082, 0, 6.2832);
+        g.fill();
+      }
+    } else if(s.readFrom==='apex'){
+      /* three numerals, one tucked at each corner, as on a real d4 */
+      var lay=faceLayout(sides)[i], size=T*0.26;
+      g.font='600 '+size+'px "IBM Plex Sans", system-ui, sans-serif';
+      g.textAlign='center'; g.textBaseline='middle';
+      for(var ci=0; ci<s.faces[i].idx.length; ci++){
+        var val=s.vertexValues[s.faces[i].idx[ci]];
+        var tp=lay.tile[ci];
+        /* pull each numeral in from its corner toward the middle of the face */
+        var nx=T*(0.5+(tp[0]-0.5)*0.70), ny=T*(0.5+(tp[1]-0.5)*0.70);
+        g.save(); g.translate(nx,ny);
+        g.rotate(Math.atan2(tp[1]-0.5, tp[0]-0.5) - Math.PI/2);
+        g.fillText(String(val), 0, 0);
+        g.restore();
+      }
+    } else {
+      /* a numeral, sized down as the faces get smaller and more numerous */
+      var size2 = sides>=20 ? T*0.40 : sides>=12 ? T*0.44 : T*0.52;
+      g.font='600 '+size2+'px "IBM Plex Sans", system-ui, sans-serif';
+      g.textAlign='center'; g.textBaseline='middle';
+      g.fillText(String(v), T*0.5, T*0.5);
+      if(v===6||v===9){                 /* the underline real dice use, so 6 and 9 read apart */
+        var w=g.measureText(String(v)).width;
+        g.fillRect(T*0.5-w*0.52, T*0.5+size2*0.44, w*1.04, Math.max(2,size2*0.07));
+      }
+    }
+    g.restore();
+  }
+  var tex=new THREE.CanvasTexture(cv);
+  tex.anisotropy=4;
+  if(THREE.SRGBColorSpace) tex.colorSpace=THREE.SRGBColorSpace;
+  texCache[key]=tex;
+  return tex;
+}
+
+/* ---------- geometry: triangulate each face into its own atlas tile ---------- */
+var geoCache={};
+function dieGeometry(THREE, sides, R){
+  var key=sides+'|'+R;
+  if(geoCache[key]) return geoCache[key];
+  var s=SHAPES[sides], n=s.faces.length,
+      cols=Math.ceil(Math.sqrt(n)), rows=Math.ceil(n/cols),
+      lay=faceLayout(sides);
+  var pos=[], nor=[], uv=[];
+  for(var i=0;i<n;i++){
+    var f=s.faces[i], nv=s.normals[i];
+    var tu=(i%cols)/cols, tv=Math.floor(i/cols)/rows;
+    for(var t=1;t<f.idx.length-1;t++){
+      var tri=[0,t,t+1];
+      for(var k=0;k<3;k++){
+        var V=s.vertices[f.idx[tri[k]]];
+        pos.push(V[0]*R, V[1]*R, V[2]*R);
+        nor.push(nv[0], nv[1], nv[2]);
+        var tp=lay[i].tile[tri[k]];
+        uv.push(tu + tp[0]/cols, 1 - (tv + tp[1]/rows));
+      }
+    }
+  }
+  var g=new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos,3));
+  g.setAttribute('normal', new THREE.Float32BufferAttribute(nor,3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv,2));
+  geoCache[key]=g;
+  return g;
+}
+
+window.__DICE_SHAPES=SHAPES;
+window.__DICE_BUILD={ faceTexture:faceTexture, dieGeometry:dieGeometry, faceLayout:faceLayout,
+                      fNormal:fNormal, fCentre:fCentre };
+})();
+
+</script>
+<script>
+/* ---- scene, physics and the window.__DICE3D contract ---- */
+(function(){
+'use strict';
+var SHAPES=window.__DICE_SHAPES, BUILD=window.__DICE_BUILD;
+if(!SHAPES||!BUILD) return;
+
+var R=17, G=2600, E=0.30, MU=0.36, DT=1/120, ZL=96;
+var THREE=null, CANNON=null, ready=false;
+var el,renderer,scene,camera,world,mat,key,fill,rim,floor,shadowPlane;
+var dice=[], live=false, done=null, raf=null, still=0, t0=0, XL=260, retries=0;
+
+function lerp(a,b,t){return a+(b-a)*t}
+
+/* ---------- geometry for the d6: a box eased toward a sphere, which is what
+     gives an injection-moulded die its soft corners without losing its faces ---------- */
+function roundedBoxGeometry(r, round){
+  var g=new THREE.BoxGeometry(r*2, r*2, r*2, 7, 7, 7);
+  var p=g.attributes.position, v=new THREE.Vector3();
+  var rs=r*Math.sqrt(3);
+  for(var i=0;i<p.count;i++){
+    v.fromBufferAttribute(p,i);
+    var len=v.length();
+    var sx=v.x/len*rs, sy=v.y/len*rs, sz=v.z/len*rs;
+    p.setXYZ(i, lerp(v.x,sx,round), lerp(v.y,sy,round), lerp(v.z,sz,round));
+  }
+  g.computeVertexNormals();
+  /* BoxGeometry groups run +x,-x,+y,-y,+z,-z, the same order as the d6 faces,
+     so each group's UVs drop straight into its atlas tile */
+  var uv=g.attributes.uv, cols=3, rows=2, seen={};
+  g.groups.forEach(function(grp, gi){
+    var tu=(gi%cols)/cols, tv=Math.floor(gi/cols)/rows;
+    for(var k=grp.start;k<grp.start+grp.count;k++){
+      var idx=g.index?g.index.getX(k):k;
+      /* a vertex shared by two triangles of the same face appears twice in the
+         index buffer; transforming its uv twice compounds the mapping and the
+         face comes out blank */
+      if(seen[idx]) continue;
+      seen[idx]=1;
+      var u=uv.getX(idx), w=uv.getY(idx);
+      uv.setXY(idx, tu+(0.10+u*0.80)/cols, 1-(tv+(0.10+(1-w)*0.80)/rows));
+    }
+  });
+  uv.needsUpdate=true;
+  g.clearGroups();
+  return g;
+}
+
+function geomFor(sides){
+  if(sides===6){
+    if(!geomFor._d6) geomFor._d6=roundedBoxGeometry(R, 0.16);
+    return geomFor._d6;
+  }
+  return BUILD.dieGeometry(THREE, sides, R);
+}
+
+function build(){
+  el=document.getElementById('tray');
+  if(!el) return false;
+  renderer=new THREE.WebGLRenderer({antialias:true, alpha:true});
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio||1, 2));
+  renderer.shadowMap.enabled=true;
+  renderer.shadowMap.type=THREE.PCFSoftShadowMap;
+  if(THREE.SRGBColorSpace) renderer.outputColorSpace=THREE.SRGBColorSpace;
+  el.appendChild(renderer.domElement);
+  renderer.domElement.style.cssText='width:100%;height:100%;display:block';
+
+  scene=new THREE.Scene();
+  camera=new THREE.PerspectiveCamera(42, 1, 1, 3000);
+
+  key=new THREE.DirectionalLight(0xffffff, 2.4);
+  key.position.set(-180, 420, 220);
+  key.castShadow=true;
+  key.shadow.mapSize.set(2048,2048);
+  key.shadow.camera.near=10; key.shadow.camera.far=1200;
+  key.shadow.camera.left=-420; key.shadow.camera.right=420;
+  key.shadow.camera.top=360; key.shadow.camera.bottom=-360;
+  key.shadow.bias=-0.0008;
+  key.shadow.normalBias=0.6;
+  scene.add(key);
+  fill=new THREE.HemisphereLight(0xdfe8ff, 0x2a2228, 1.0); scene.add(fill);
+  rim=new THREE.DirectionalLight(0xffd9ec, 0.5); rim.position.set(260,180,-240); scene.add(rim);
+
+  shadowPlane=new THREE.Mesh(new THREE.PlaneGeometry(4000,4000),
+    new THREE.ShadowMaterial({opacity:0.40}));
+  shadowPlane.rotation.x=-Math.PI/2;
+  shadowPlane.receiveShadow=true;
+  scene.add(shadowPlane);
+
+  world=new CANNON.World({gravity:new CANNON.Vec3(0,-G,0)});
+  world.broadphase=new CANNON.NaiveBroadphase();
+  world.solver.iterations=14;
+  world.allowSleep=true;
+  mat=new CANNON.Material('die');
+  world.addContactMaterial(new CANNON.ContactMaterial(mat,mat,{friction:MU,restitution:E}));
+  world.defaultContactMaterial.friction=MU;
+  world.defaultContactMaterial.restitution=E;
+  rebuildWalls();
+  window.addEventListener('resize', resize);
+  el.addEventListener('click', function(){ if(live) settleNow(); });
+  resize();
+  return true;
+}
+
+var walls=[];
+function rebuildWalls(){
+  walls.forEach(function(b){world.removeBody(b)});
+  walls=[];
+  [[[0,0,0],[1,0,0],-Math.PI/2],
+   [[-XL,0,0],[0,1,0],Math.PI/2],
+   [[XL,0,0],[0,1,0],-Math.PI/2],
+   [[0,0,-ZL],[0,1,0],0],
+   [[0,0,ZL],[0,1,0],Math.PI]].forEach(function(w){
+    var b=new CANNON.Body({mass:0, shape:new CANNON.Plane(), material:mat});
+    b.position.set(w[0][0],w[0][1],w[0][2]);
+    b.quaternion.setFromAxisAngle(new CANNON.Vec3(w[1][0],w[1][1],w[1][2]), w[2]);
+    world.addBody(b); walls.push(b);
+  });
+}
+
+function resize(){
+  if(!el||!renderer) return;
+  var w=el.clientWidth||600, h=el.clientHeight||170;
+  renderer.setSize(w,h,false);
+  XL=Math.max(140, w/2-14);
+  rebuildWalls();
+  camera.aspect=w/h;
+  /* frame the tray floor: pull back until the full width fits */
+  /* Frame the tray floor tightly. The dice are only ~R tall once settled, so
+     aiming at the floor plane rather than the drop height keeps the picture
+     full of dice instead of the empty air they fell through. */
+  var fovV=camera.fov*Math.PI/180;
+  var distH=(ZL*2.25)/(2*Math.tan(fovV/2));
+  var distW=(XL*1.14)/(Math.tan(fovV/2)*camera.aspect);
+  var d=Math.max(distH,distW);
+  camera.position.set(0, d*0.70, d*0.62);
+  camera.lookAt(0, -R*0.3, 0);
+  camera.updateProjectionMatrix();
+}
+
+function shapeBody(sides){
+  if(sides===6) return new CANNON.Box(new CANNON.Vec3(R,R,R));
+  var s=SHAPES[sides];
+  return new CANNON.ConvexPolyhedron({
+    vertices:s.vertices.map(function(v){return new CANNON.Vec3(v[0]*R,v[1]*R,v[2]*R)}),
+    faces:s.faces.map(function(f){return f.idx.slice()})
+  });
+}
+function randQ(){
   var u1=Math.random(),u2=Math.random()*6.283185307,u3=Math.random()*6.283185307,
       a=Math.sqrt(1-u1),b=Math.sqrt(u1);
-  return [a*Math.sin(u2), a*Math.cos(u2), b*Math.sin(u3), b*Math.cos(u3)];
+  return [a*Math.sin(u2),a*Math.cos(u2),b*Math.sin(u3),b*Math.cos(u3)];
 }
-function rnd(n){return (Math.random()*2-1)*n;}
+var rnd=function(n){return (Math.random()*2-1)*n};
 
-var el,hint,scene,table,dice=[],raf=null,live=false,done=null,still=0,retries=0,t0=0,XL=260;
-var INV_I = 6/(S*S);   /* a uniform cube's inertia is isotropic: I = m s^2 / 6, mass = 1 */
-
-function buildDie(face,pip){
-  var d=document.createElement('div'); d.className='die';
-  d.style.setProperty('--fc',face); d.style.setProperty('--pc',pip);
-  FACES.forEach(function(f){
-    var key=CSSFACE[f[3]], el=document.createElement('div');
-    el.className='face'; el.style.transform=FACETF[key];
-    PIPS[f[3]].forEach(function(p){
-      var s=document.createElement('span'); s.className='pip';
-      s.style.left=p[0]+'%'; s.style.top=p[1]+'%'; el.appendChild(s);
-    });
-    d.appendChild(el);
-  });
-  return d;
-}
-function mount(){
-  el=document.getElementById('tray'); hint=document.getElementById('trayhint');
-  scene=document.createElement('div'); scene.className='scene';
-  table=document.createElement('div'); table.className='table';
-  scene.appendChild(table); el.insertBefore(scene,hint);
-  el.addEventListener('click',function(){ if(live) settleNow(); });
-  measure();
-  window.addEventListener('resize',measure);
-}
-function measure(){ XL=Math.max(140,(el.clientWidth||600)/2-14); }
-
-function contact(d,n,depth,r){
-  d.p[1]+=n[1]*depth*0.42; d.p[0]+=n[0]*depth*0.42; d.p[2]+=n[2]*depth*0.42;
-  var w=cross(d.w,r);
-  var vp=[d.v[0]+w[0], d.v[1]+w[1], d.v[2]+w[2]];
-  var vn=vp[0]*n[0]+vp[1]*n[1]+vp[2]*n[2];
-  if(vn>=0) return;
-  var rn=cross(r,n), k=1+INV_I*(rn[0]*rn[0]+rn[1]*rn[1]+rn[2]*rn[2]);
-  var j=-(1+E)*vn/k;
-  d.v[0]+=j*n[0]; d.v[1]+=j*n[1]; d.v[2]+=j*n[2];
-  var ang=cross(r,[j*n[0],j*n[1],j*n[2]]);
-  d.w[0]+=INV_I*ang[0]; d.w[1]+=INV_I*ang[1]; d.w[2]+=INV_I*ang[2];
-  /* coulomb friction along the tangent */
-  var t=[vp[0]-vn*n[0], vp[1]-vn*n[1], vp[2]-vn*n[2]];
-  var tl=Math.hypot(t[0],t[1],t[2]);
-  if(tl>0.01){
-    t=[t[0]/tl,t[1]/tl,t[2]/tl];
-    var rt=cross(r,t), kt=1+INV_I*(rt[0]*rt[0]+rt[1]*rt[1]+rt[2]*rt[2]);
-    var jt=Math.max(-MU*j, Math.min(MU*j, -tl/kt));
-    d.v[0]+=jt*t[0]; d.v[1]+=jt*t[1]; d.v[2]+=jt*t[2];
-    var at=cross(r,[jt*t[0],jt*t[1],jt*t[2]]);
-    d.w[0]+=INV_I*at[0]; d.w[1]+=INV_I*at[1]; d.w[2]+=INV_I*at[2];
-  }
-}
-function step(dt){
-  for(var i=0;i<dice.length;i++){
-    var d=dice[i];
-    if(d.sleep) continue;
-    d.v[1]-=G*dt;
-    d.p[0]+=d.v[0]*dt; d.p[1]+=d.v[1]*dt; d.p[2]+=d.v[2]*dt;
-    var wq=[0,d.w[0]*dt*0.5,d.w[1]*dt*0.5,d.w[2]*dt*0.5];
-    d.q=qnorm([d.q[0]+ (wq[0]*d.q[0]-wq[1]*d.q[1]-wq[2]*d.q[2]-wq[3]*d.q[3]),
-               d.q[1]+ (wq[0]*d.q[1]+wq[1]*d.q[0]+wq[2]*d.q[3]-wq[3]*d.q[2]),
-               d.q[2]+ (wq[0]*d.q[2]-wq[1]*d.q[3]+wq[2]*d.q[0]+wq[3]*d.q[1]),
-               d.q[3]+ (wq[0]*d.q[3]+wq[1]*d.q[2]-wq[2]*d.q[1]+wq[3]*d.q[0])]);
-    var m=qmat(d.q);
-    for(var s=7;s>0;s--){ var t=(Math.random()*(s+1))|0, tmp=ORD[s]; ORD[s]=ORD[t]; ORD[t]=tmp; }
-    for(var c=0;c<8;c++){
-      var r=mv(m,CORNERS[ORD[c]]);
-      var wx=d.p[0]+r[0], wy=d.p[1]+r[1], wz=d.p[2]+r[2];
-      if(wy<0) contact(d,[0,1,0],-wy,r);
-      if(wx<-XL) contact(d,[1,0,0],-XL-wx,r);
-      if(wx> XL) contact(d,[-1,0,0],wx-XL,r);
-      if(wz<-ZL) contact(d,[0,0,1],-ZL-wz,r);
-      if(wz> ZL) contact(d,[0,0,-1],wz-ZL,r);
+function readDie(d){
+  var s=SHAPES[d.sides], q=d.body.quaternion;
+  var e=new THREE.Quaternion(q.x,q.y,q.z,q.w), v=new THREE.Vector3();
+  var best=-Infinity, val, i;
+  if(s.readFrom==='apex'){
+    /* a resting tetrahedron points a vertex at the ceiling; that vertex is the roll */
+    for(i=0;i<s.vertices.length;i++){
+      v.set(s.vertices[i][0],s.vertices[i][1],s.vertices[i][2]).normalize().applyQuaternion(e);
+      if(v.y>best){ best=v.y; val=s.vertexValues[i]; }
     }
-    d.v[0]*=0.994; d.v[1]*=0.994; d.v[2]*=0.994;
-    d.w[0]*=0.991; d.w[1]*=0.991; d.w[2]*=0.991;
-    if(Math.hypot(d.v[0],d.v[1],d.v[2])<5 && Math.hypot(d.w[0],d.w[1],d.w[2])<0.5){
-      if(++d.calm>26){ d.sleep=true; d.v=[0,0,0]; d.w=[0,0,0]; }
-    } else d.calm=0;
+    return {val:val, align:best};
   }
+  val=s.faces[0].value;
+  for(i=0;i<s.normals.length;i++){
+    v.set(s.normals[i][0],s.normals[i][1],s.normals[i][2]).applyQuaternion(e);
+    if(v.y>best){ best=v.y; val=s.faces[i].value; }
+  }
+  return {val:val, align:best};
+}
+
+function clearDice(){
+  dice.forEach(function(d){
+    scene.remove(d.mesh);
+    world.removeBody(d.body);
+    if(d.mesh.material) d.mesh.material.dispose();
+  });
+  dice=[];
+}
+
+function roll(groups, palette, cb){
+  if(!ready) return;
+  clearDice();
+  el.hidden=false;
+  resize();
+  /* Spread the drop over as much of the tray as the handful needs. Spawning a
+     single die across the full width lets it roll into a far corner, which
+     looks like a bug rather than a roll. */
+  var total=0;
+  groups.forEach(function(g){ total+=g.count; });
+  var spread=Math.min(XL-50, 46+total*22);
+  groups.forEach(function(g){
+    var p=palette[g.key]||{face:'#8a8a8a',pip:'#ffffff'};
+    var sides=g.sides||6;
+    if(!SHAPES[sides]) sides=6;
+    var tex=BUILD.faceTexture(THREE, sides, p.face, p.pip);
+    for(var n=0;n<g.count;n++){
+      var m=new THREE.Mesh(geomFor(sides), new THREE.MeshStandardMaterial({
+        map:tex, roughness:0.42, metalness:0.04,
+        envMapIntensity:0.5
+      }));
+      m.castShadow=true;
+      scene.add(m);
+      var q=randQ();
+      var body=new CANNON.Body({mass:1, shape:shapeBody(sides), material:mat,
+        allowSleep:true, sleepSpeedLimit:2, sleepTimeLimit:0.22});
+      body.position.set(rnd(spread), 150+Math.random()*170, rnd(Math.min(ZL-28, 24+total*4)));
+      body.velocity.set(rnd(170), -260-Math.random()*160, rnd(130));
+      body.angularVelocity.set(rnd(15),rnd(15),rnd(15));
+      body.quaternion.set(q[1],q[2],q[3],q[0]);
+      world.addBody(body);
+      dice.push({key:g.key, sides:sides, mesh:m, body:body});
+    }
+  });
+  done=cb; live=true; still=0; retries=0; t0=now();
+  if(!raf) loop();
+  if(reducedMotion()) settleNow();
+}
+
+function now(){ return (window.performance&&performance.now)?performance.now():Date.now(); }
+function reducedMotion(){
+  try{ return window.matchMedia('(prefers-reduced-motion: reduce)').matches; }catch(e){ return false; }
+}
+function allStill(){
+  return dice.every(function(d){
+    return d.body.sleepState===CANNON.Body.SLEEPING ||
+      (d.body.velocity.length()<2 && d.body.angularVelocity.length()<2);
+  });
 }
 function draw(){
-  for(var i=0;i<dice.length;i++){
-    var d=dice[i], R=qmat(d.q);
-    /* css basis: x -> x, depth z -> -y, height y -> z */
-    var A=[R[0],[-R[2][0],-R[2][1],-R[2][2]],R[1]];
-    var c=[[A[0][0],-A[0][2],A[0][1]],[A[1][0],-A[1][2],A[1][1]],[A[2][0],-A[2][2],A[2][1]]];
-    d.node.style.transform='translate3d('+d.p[0].toFixed(1)+'px,'+(-d.p[2]).toFixed(1)+'px,'+d.p[1].toFixed(1)+'px) '+
-      'matrix3d('+c[0][0].toFixed(4)+','+c[1][0].toFixed(4)+','+c[2][0].toFixed(4)+',0,'+
-      c[0][1].toFixed(4)+','+c[1][1].toFixed(4)+','+c[2][1].toFixed(4)+',0,'+
-      c[0][2].toFixed(4)+','+c[1][2].toFixed(4)+','+c[2][2].toFixed(4)+',0,0,0,0,1)';
-    var lift=Math.max(0,Math.min(1,d.p[1]/170)), sc=1+lift*1.5;
-    d.shadow.style.transform='translate3d('+d.p[0].toFixed(1)+'px,'+(-d.p[2]).toFixed(1)+'px,0.4px) scale('+sc.toFixed(2)+')';
-    d.shadow.style.opacity=(0.3*(1-lift*0.75)).toFixed(2);
-  }
+  dice.forEach(function(d){
+    d.mesh.position.set(d.body.position.x, d.body.position.y, d.body.position.z);
+    d.mesh.quaternion.set(d.body.quaternion.x, d.body.quaternion.y,
+                          d.body.quaternion.z, d.body.quaternion.w);
+  });
+  renderer.render(scene,camera);
 }
-function top(d){
-  var m=qmat(d.q), best=-2, val=1;
-  for(var i=0;i<FACES.length;i++){
-    var n=mv(m,[FACES[i][0],FACES[i][1],FACES[i][2]]);
-    if(n[1]>best){ best=n[1]; val=FACES[i][3]; }
-  }
-  return {val:val,align:best};
+function nudgeCocked(){
+  /* a die leaning on a wall or another die is not showing a face; shove it and
+     let it fall again rather than reporting a number nobody could read */
+  var moved=0;
+  dice.forEach(function(d){
+    var need = SHAPES[d.sides].readFrom==='apex' ? 0.80 : 0.86;
+    if(readDie(d).align < need){
+      d.body.wakeUp();
+      d.body.position.y += 46;
+      d.body.velocity.set(rnd(90), 40, rnd(90));
+      d.body.angularVelocity.set(rnd(13),rnd(13),rnd(13));
+      moved++;
+    }
+  });
+  return moved;
 }
-function allStill(){ return dice.every(function(d){ return d.sleep; }); }
-function read(){ var r={}; dice.forEach(function(d){ (r[d.key]=r[d.key]||[]).push(top(d).val); }); return r; }
 function finish(){
-  var bad=dice.filter(function(d){ return top(d).align<0.9; });
-  if(bad.length && retries<2){
-    retries++; still=0;
-    bad.forEach(function(d){ d.sleep=false; d.calm=0;
-      d.v=[rnd(90),240,rnd(90)]; d.w=[rnd(13),rnd(13),rnd(13)]; });
-    return false;
-  }
-  live=false; hint.textContent='';
-  if(done){ var c=done; done=null; c(read()); }
+  if(nudgeCocked() && retries<3){ retries++; still=0; t0=now(); return false; }
+  live=false;
+  var res={};
+  dice.forEach(function(d){ (res[d.key]=res[d.key]||[]).push(readDie(d).val); });
+  if(done) done(res);
+  done=null;
   return true;
 }
 function settleNow(){
-  var guard=0,i;
-  for(i=0;i<2600 && !allStill();i++) step(1/120);
-  while(!finish() && guard++<3){ for(i=0;i<1200 && !allStill();i++) step(1/120); }
+  var i;
+  for(i=0;i<3000 && !allStill();i++) world.step(DT);
+  var guard=0;
+  while(!finish() && guard++<3){ for(i=0;i<1400 && !allStill();i++) world.step(DT); }
   draw();
 }
 function loop(){
   raf=requestAnimationFrame(loop);
-  if(live){ step(1/120); step(1/120); }
+  if(live){ world.step(DT); world.step(DT); }
   draw();
   if(!live) return;
-  var t=performance.now()-t0;
+  var t=now()-t0;
   if(t>380 && allStill()){ if(++still>4) finish(); } else still=0;
   if(t>7000) settleNow();
 }
-function clear(){ dice.forEach(function(d){ d.node.remove(); d.shadow.remove(); }); dice=[]; }
 
-function roll(groups,palette,cb){
-  if(!scene) mount();
-  el.hidden=false; measure(); clear();
-  done=cb; still=0; retries=0; t0=performance.now(); live=true;
-  hint.textContent='click to settle';
-  groups.forEach(function(g){
-    var p=palette[g.key]||{face:'#888888',pip:'#ffffff'};
-    for(var n=0;n<g.count;n++){
-      var node=buildDie(p.face,p.pip);
-      var sh=document.createElement('div'); sh.className='sh';
-      table.appendChild(sh); table.appendChild(node);
-      dice.push({ key:g.key, node:node, shadow:sh, calm:0, sleep:false,
-        p:[rnd(XL-40), 150+Math.random()*170, rnd(ZL-26)],
-        v:[rnd(170), -260-Math.random()*160, rnd(130)],
-        w:[rnd(15),rnd(15),rnd(15)],
-        q:randQ() });
-    }
-  });
-  if(!raf) loop();
+function themeTint(){
+  if(!scene) return;
+  var dark=false;
+  try{
+    var r=document.documentElement.getAttribute('data-theme');
+    dark = r==='dark' || (!r && window.matchMedia('(prefers-color-scheme: dark)').matches);
+  }catch(e){}
+  fill.color.set(dark?0x9fb4d8:0xdfe8ff);
+  fill.groundColor.set(dark?0x1a151a:0x2a2228);
+  fill.intensity=dark?0.75:1.0;
+  key.intensity=dark?2.0:2.4;
+  shadowPlane.material.opacity=dark?0.55:0.40;
 }
-window.__DICE3D={ roll:roll, theme:function(){},
-  clear:function(){ if(!scene) return; clear(); el.hidden=true; live=false;
-    if(raf){ cancelAnimationFrame(raf); raf=null; } } };
-if(window.APP && window.APP.ready) window.APP.ready();
+
+window.__DICE3D={
+  roll:roll,
+  supports:[4,6,8,10,12,20],
+  theme:themeTint,
+  clear:function(){
+    if(!ready) return;
+    clearDice(); live=false; done=null;
+    if(el) el.hidden=true;
+    if(raf){ cancelAnimationFrame(raf); raf=null; }
+    if(renderer) renderer.render(scene,camera);
+  }
+};
+
+/* ---------- boot: three from a classic tag, cannon-es as a module ---------- */
+function boot(){
+  THREE=window.THREE;
+  if(!THREE) return;
+  window.__CANNON_READY__.then(function(C){
+    CANNON=C;
+    if(!build()) return;
+    themeTint();
+    ready=true;
+    if(window.APP && window.APP.ready) window.APP.ready();
+  }).catch(function(){ /* leave ready false: the page falls back on its own */ });
+}
+if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', boot);
+else boot();
 })();
+
 </script>
