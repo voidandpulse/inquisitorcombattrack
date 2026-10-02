@@ -58,11 +58,22 @@ versions were not:
 Neither was visible by reading the code. Both were found by rolling several
 thousand dice and running a chi-square test, which is what `tests/` does.
 
-Current result: chi-square 1.65 on 4,940 reads (5 df, p = 0.90), mean 3.477,
-260/260 rolls settled. That run has roughly 80% power against a single face
-landing 18.6% of the time instead of 16.7% — so the honest claim is "no face is
-off by more than about two percentage points," not "provably fair." Ruling out
-a half-point skew would take on the order of 70,000 rolls.
+Current result, at 100,000 reads: chi-square 6.23 (5 df, p = 0.29), mean 3.496,
+no face off true by more than 0.22 percentage points, no roll failing to settle.
+That run has roughly 80% power against a single face landing 17.1% of the time
+instead of 16.7%, so the claim it supports is "no face is off by more than about
+four tenths of a point."
+
+`tests/compare-engines.js` runs the same test against [cannon-es][c], a
+published rigid-body engine, under matched constants, launch distribution,
+timestep and face-reading code, so the only difference between the two columns
+is the solver. At 100,000 reads each, cannon-es scored chi-square 3.69
+(p = 0.60) and this project's solver 6.23 (p = 0.29) -- both ordinary draws
+from the same null distribution, and not evidence that either is fairer. The
+reason to prefer a library here would be dice shapes beyond a cube, not
+fairness.
+
+[c]: https://github.com/pmndrs/cannon-es
 
 ## Tests
 
@@ -70,6 +81,9 @@ a half-point skew would take on the order of 70,000 rolls.
 node tests/bonus-pool.js      # bonus-type stacking and suppression
 node tests/dice-fairness.js   # rolls the shipped physics, chi-square on faces
 node tests/face-reading.js    # isolates "which face is up" from the physics
+
+npm install                   # cannon-es, needed only for the next one
+node tests/compare-engines.js # this solver against cannon-es, side by side
 ```
 
 `dice-fairness.js` and `face-reading.js` split the problem deliberately: if the
@@ -77,7 +91,8 @@ reading test is clean and the fairness test is not, the bias is in the solver.
 That's how the contact-ordering bug was localised. Both take an optional sample
 count as the first argument.
 
-All three read `strikes.html` directly and exit non-zero on failure.
+All of them read `strikes.html` directly and exit non-zero on failure, so they can
+run in CI unchanged.
 
 ## Scope
 

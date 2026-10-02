@@ -1,0 +1,14 @@
+{
+  "name": "inquisitorcombattrack",
+  "version": "1.0.0",
+  "description": "Pathfinder 1e combat damage calculator for a level 16 Inquisitor",
+  "private": true,
+  "license": "MIT",
+  "scripts": {
+    "test": "node tests/bonus-pool.js && node tests/face-reading.js && node tests/dice-fairness.js",
+    "compare": "node tests/compare-engines.js"
+  },
+  "devDependencies": {
+    "cannon-es": "^0.20.0"
+  }
+}
