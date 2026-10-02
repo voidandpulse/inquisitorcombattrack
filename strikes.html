@@ -1,0 +1,714 @@
+<title>Sidra's Combat Log</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Spectral:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+/* Layout: persistent buff state at left, the live round at right; one column on phones. */
+:root{
+  --bg:#EDF0F4; --panel:#FFFFFF; --panel2:#F5F7FA; --sunk:#E6EAEF;
+  --fg:#161C24; --dim:#5B6672; --faint:#8A95A1;
+  --line:#D3DAE2; --line2:#E2E7ED;
+  --accent:#9E004F; --accent-soft:rgba(158,0,79,.09); --accent-line:rgba(158,0,79,.3);
+  --crit:#8A5A00; --crit-soft:rgba(138,90,0,.11); --crit-line:rgba(138,90,0,.35);
+  --sup:#9AA4AF; --felt:#DFE4EA;
+  --f-disp:"Spectral",Georgia,serif;
+  --f-ui:"IBM Plex Sans",system-ui,-apple-system,sans-serif;
+  --f-num:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#0D1117; --panel:#151B23; --panel2:#1B222B; --sunk:#10161D;
+  --fg:#E2E8F0; --dim:#8F9BA9; --faint:#6E7A88;
+  --line:#2A3440; --line2:#222B35;
+  --accent:#FF5C9E; --accent-soft:rgba(255,92,158,.13); --accent-line:rgba(255,92,158,.35);
+  --crit:#E6B74A; --crit-soft:rgba(230,183,74,.13); --crit-line:rgba(230,183,74,.35);
+  --sup:#5F6B78; --felt:#121920;
+  color-scheme:dark;
+}}
+:root[data-theme="dark"]{
+  --bg:#0D1117; --panel:#151B23; --panel2:#1B222B; --sunk:#10161D;
+  --fg:#E2E8F0; --dim:#8F9BA9; --faint:#6E7A88;
+  --line:#2A3440; --line2:#222B35;
+  --accent:#FF5C9E; --accent-soft:rgba(255,92,158,.13); --accent-line:rgba(255,92,158,.35);
+  --crit:#E6B74A; --crit-soft:rgba(230,183,74,.13); --crit-line:rgba(230,183,74,.35);
+  --sup:#5F6B78; --felt:#121920;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font-family:var(--f-ui);line-height:1.45;margin:0}
+.wrap{max-width:1180px;margin:0 auto;padding-inline:16px;padding-block:20px 56px}
+h1{font-family:var(--f-disp);font-weight:600;font-size:26px;letter-spacing:-.01em;margin:0;text-wrap:balance}
+.sub{color:var(--dim);font-size:13px;margin:3px 0 0}
+header.top{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:18px}
+.toggles{display:flex;gap:7px;flex-wrap:wrap}
+button{font-family:inherit;font-size:inherit;cursor:pointer}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:4px}
+.grid{display:grid;grid-template-columns:minmax(0,330px) minmax(0,1fr);gap:16px;align-items:start}
+@media (max-width:860px){.grid{grid-template-columns:minmax(0,1fr)}}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px}
+.card + .card{margin-top:14px}
+.card > h2{font-family:var(--f-ui);font-size:11px;font-weight:600;letter-spacing:.09em;text-transform:uppercase;color:var(--dim);
+  margin:0;padding:11px 14px;border-bottom:1px solid var(--line2);display:flex;gap:8px;align-items:baseline}
+.card > h2 .act{margin-left:auto;text-transform:none;letter-spacing:0;font-weight:400;color:var(--faint);font-size:10.5px}
+.card .body{padding:12px 14px}
+label.row{display:flex;align-items:baseline;gap:9px;padding:5px 0;cursor:pointer;font-size:13.5px}
+label.row input[type=checkbox]{margin:0;accent-color:var(--accent);flex:none;position:relative;top:2px}
+label.row .tag{margin-left:auto;font-family:var(--f-num);font-size:11px;color:var(--faint);white-space:nowrap;font-variant-numeric:tabular-nums}
+label.row:has(input:disabled){color:var(--sup);cursor:not-allowed}
+label.row input:disabled{opacity:.4}
+.note{font-size:11.5px;color:var(--faint);margin:7px 0 0;line-height:1.4}
+.divider{height:1px;background:var(--line2);margin:11px -14px}
+.numrow{display:flex;align-items:center;gap:8px;padding:5px 0;font-size:13.5px;flex-wrap:wrap}
+.numrow label{flex:1;min-width:92px}
+input[type=number],select{font-family:var(--f-num);font-size:13px;background:var(--panel2);color:var(--fg);
+  border:1px solid var(--line);border-radius:6px;padding:4px 6px}
+input[type=number]{width:62px;text-align:right;font-variant-numeric:tabular-nums}
+select{font-family:var(--f-ui);padding:4px 5px}
+.atk{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--line2);flex-wrap:wrap}
+.atk:last-child{border-bottom:0}
+.atk .who{font-size:13px;min-width:112px;flex:1}
+.atk .who small{display:block;color:var(--faint);font-size:11px}
+.atk .mod{font-family:var(--f-num);font-variant-numeric:tabular-nums;font-size:19px;font-weight:600;min-width:52px;text-align:right}
+.btns{display:flex;gap:5px;flex:none}
+.btns button,.ghost{border:1px solid var(--line);background:var(--panel2);color:var(--fg);border-radius:6px;padding:5px 10px;font-size:12px;font-weight:500}
+.btns button:hover{border-color:var(--accent-line);background:var(--accent-soft)}
+.btns button.crit:hover{border-color:var(--crit-line);background:var(--crit-soft);color:var(--crit)}
+.btns button.miss:hover{background:var(--sunk);color:var(--dim)}
+.btns button:disabled{opacity:.4;cursor:not-allowed}
+.ghost{background:transparent;color:var(--dim)}
+.ghost:hover{color:var(--fg);border-color:var(--accent-line)}
+/* dice tray */
+#tray{position:relative;border:1px solid var(--line);border-radius:10px;background:var(--felt);overflow:hidden;margin-bottom:12px;cursor:pointer}
+#tray canvas{display:block;width:100%;height:auto}
+#tray .hint{position:absolute;left:0;right:0;bottom:7px;text-align:center;font-size:10.5px;letter-spacing:.07em;
+  text-transform:uppercase;color:var(--faint);pointer-events:none}
+#tray[hidden]{display:none}
+.entry{border:1px solid var(--line);border-radius:9px;padding:11px 12px;margin-bottom:9px;background:var(--panel)}
+.entry.isCrit{border-color:var(--crit-line);background:var(--crit-soft)}
+.entry.isMiss{opacity:.6}
+.entry.pending{border-style:dashed}
+.entry .head{display:flex;align-items:baseline;gap:9px;flex-wrap:wrap}
+.entry .name{font-weight:600;font-size:13.5px}
+.entry .big{margin-left:auto;font-family:var(--f-num);font-size:24px;font-weight:600;font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+.entry.isCrit .big{color:var(--crit)}
+.entry .big.roll{color:var(--faint)}
+.pill{font-size:10.5px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;padding:2px 7px;border-radius:99px;border:1px solid var(--line);color:var(--dim);white-space:nowrap}
+.pill.c{border-color:var(--crit-line);color:var(--crit)}
+.pill.dr{border-color:var(--accent-line);color:var(--accent)}
+.bd{margin-top:9px;font-family:var(--f-num);font-size:12px;font-variant-numeric:tabular-nums;color:var(--dim)}
+.bd div{display:flex;gap:8px;padding:1.5px 0}
+.bd .l{flex:1;min-width:0;overflow-wrap:anywhere}
+.bd .v{flex:none}
+.bd .tot{border-top:1px solid var(--line2);margin-top:5px;padding-top:5px;color:var(--fg);font-weight:600}
+.bd .sup{color:var(--sup);text-decoration:line-through}
+.bd .en{color:var(--accent)}
+.swatch{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:5px;vertical-align:baseline;border:1px solid rgba(128,128,128,.4)}
+.decap{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:9px;padding-top:9px;border-top:1px solid var(--line2);font-size:12px;color:var(--dim)}
+.decap button{border:1px solid var(--line);background:var(--panel);color:var(--fg);border-radius:6px;padding:4px 9px;font-size:11.5px}
+.decap button:hover{border-color:var(--crit-line);color:var(--crit)}
+.decap button[aria-pressed=true]{border-color:var(--crit-line);background:var(--crit-soft);color:var(--crit);font-weight:600}
+.total{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;padding:12px 14px;border:1px solid var(--accent-line);
+  background:var(--accent-soft);border-radius:10px;margin-bottom:12px}
+.total .k{font-size:11px;letter-spacing:.09em;text-transform:uppercase;color:var(--dim);font-weight:600}
+.total .n{font-family:var(--f-num);font-size:30px;font-weight:600;font-variant-numeric:tabular-nums;letter-spacing:-.02em;color:var(--accent)}
+.total .by{font-family:var(--f-num);font-size:12px;color:var(--dim);margin-left:auto;text-align:right}
+.strip{display:flex;gap:9px;align-items:center;flex-wrap:wrap;margin-bottom:12px}
+.empty{color:var(--faint);font-size:13px;padding:14px 2px}
+details.char summary{cursor:pointer;font-size:12px;color:var(--dim);padding:2px 0}
+@media (prefers-reduced-motion:no-preference){.entry{animation:in .16s ease-out}@keyframes in{from{opacity:0;transform:translateY(-3px)}}}
+</style>
+
+<div class="wrap">
+<header class="top">
+  <div>
+    <h1>Sidra's Combat Log</h1>
+    <p class="sub">Inquisitor 16, Sworn of the Eldest &middot; +4 holy keen adamantine scimitar, 15&ndash;20/&times;2</p>
+  </div>
+  <div class="toggles">
+    <button class="ghost" id="dicemode">Dice: 3D</button>
+    <button class="ghost" id="theme">Theme</button>
+  </div>
+</header>
+
+<div class="grid">
+<div>
+  <section class="card">
+    <h2>Target</h2>
+    <div class="body">
+      <label class="row"><input type="checkbox" id="t_evil" checked><span>Evil</span><span class="tag">holy 2d6</span></label>
+      <label class="row"><input type="checkbox" id="t_undead"><span>Undead</span><span class="tag">smite legal</span></label>
+      <label class="row"><input type="checkbox" id="t_vuln"><span>Energy vulnerability</span><span class="tag">+1/die</span></label>
+      <p class="note">Vulnerability adds 1 per die to Mage Strike energy, through Exploit Weakness.</p>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Judgments &mdash; <span id="jcount">0</span>/3 <span class="act">swift &middot; immediate w/ Instant Judgment</span></h2>
+    <div class="body">
+      <label class="row"><input type="checkbox" class="j" id="j_just"><span>Justice</span><span class="tag">+4 atk sacred</span></label>
+      <label class="row"><input type="checkbox" class="j" id="j_dest"><span>Destruction</span><span class="tag">+6 dmg sacred</span></label>
+      <label class="row"><input type="checkbox" class="j" id="j_smite"><span>Smiting</span><span class="tag">magic/chaotic/adamantine</span></label>
+      <div class="divider"></div>
+      <label class="row"><input type="checkbox" class="j" id="j_prot"><span>Protection</span><span class="tag">+4 AC</span></label>
+      <label class="row"><input type="checkbox" class="j" id="j_pure"><span>Purity</span><span class="tag">+4 saves</span></label>
+      <label class="row"><input type="checkbox" class="j" id="j_heal"><span>Healing</span><span class="tag">fast healing 6</span></label>
+      <label class="row"><input type="checkbox" class="j" id="j_pierce"><span>Piercing</span><span class="tag">+6 CL vs SR</span></label>
+      <label class="row"><input type="checkbox" class="j" id="j_resil"><span>Resiliency</span><span class="tag">DR 4/lawful</span></label>
+      <label class="row"><input type="checkbox" class="j" id="j_resist"><span>Resistance</span><span class="tag">resist 12</span></label>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Class &amp; spells</h2>
+    <div class="body">
+      <label class="row"><input type="checkbox" id="b_bane" checked><span>Greater bane</span><span class="tag">swift &middot; +2 atk/+2 dmg, 4d6</span></label>
+      <label class="row"><input type="checkbox" id="b_dp"><span>Divine power</span><span class="tag">standard &middot; +5/+5 luck</span></label>
+      <label class="row"><input type="checkbox" id="b_haste"><span>Haste</span><span class="tag">+1 atk</span></label>
+      <p class="note">Divine power and haste each grant one extra attack and they don't stack, so the tool grants it once.</p>
+      <div class="divider"></div>
+      <label class="row"><input type="checkbox" id="b_smiteab"><span>Smite abomination</span><span class="tag">standard &middot; +12/+16</span></label>
+      <label class="row"><input type="checkbox" id="b_hunt"><span>Hunter's blessing</span><span class="tag">standard &middot; +2/+2 sacred</span></label>
+      <label class="row"><input type="checkbox" id="b_hero"><span>Heroism</span><span class="tag">standard &middot; +2 atk morale</span></label>
+      <label class="row"><input type="checkbox" id="b_wrath"><span>Wrath</span><span class="tag">standard &middot; +1/+1 morale</span></label>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>On the fly</h2>
+    <div class="body">
+      <div class="numrow"><label for="n_bardatk">Bard attack (morale)</label><input type="number" id="n_bardatk" value="0" step="1"></div>
+      <div class="numrow"><label for="n_barddmg">Bard damage (morale)</label><input type="number" id="n_barddmg" value="0" step="1"></div>
+      <div class="divider"></div>
+      <div class="numrow"><label for="n_mtype">Misc type</label>
+        <select id="n_mtype">
+          <option value="untyped">untyped</option><option value="sacred">sacred</option>
+          <option value="morale">morale</option><option value="luck">luck</option>
+          <option value="enhancement">enhancement</option><option value="competence">competence</option>
+          <option value="insight">insight</option>
+        </select></div>
+      <div class="numrow"><label for="n_matk">Misc attack</label><input type="number" id="n_matk" value="0" step="1"></div>
+      <div class="numrow"><label for="n_mdmg">Misc damage</label><input type="number" id="n_mdmg" value="0" step="1"></div>
+      <div class="divider"></div>
+      <details class="char"><summary>Base numbers</summary>
+        <div class="numrow"><label for="c_bab">BAB</label><input type="number" id="c_bab" value="12"></div>
+        <div class="numrow"><label for="c_dex">Dex mod</label><input type="number" id="c_dex" value="8"></div>
+        <div class="numrow"><label for="c_enh">Weapon enh</label><input type="number" id="c_enh" value="4"></div>
+        <div class="numrow"><label for="c_wf">Weapon focus</label><input type="number" id="c_wf" value="1"></div>
+        <p class="note">Damage carries Dex through slashing grace and the same enhancement bonus.</p>
+      </details>
+    </div>
+  </section>
+</div>
+
+<div>
+  <section class="card">
+    <h2>Full attack <span class="act">full-round action</span></h2>
+    <div class="body" id="atkbox"></div>
+  </section>
+
+  <section class="card">
+    <h2>Swift &amp; standing</h2>
+    <div class="body">
+      <div class="atk">
+        <div class="who">Mage strike<small>swift &middot; 1 mythic power &middot; bypasses all DR</small></div>
+        <select id="ms_lvl" aria-label="Spell slot level">
+          <option value="1">1st</option><option value="2">2nd</option><option value="3">3rd</option>
+          <option value="4">4th</option><option value="5" selected>5th</option><option value="6">6th</option>
+        </select>
+        <select id="ms_el" aria-label="Energy type">
+          <option value="fire" selected>fire</option><option value="cold">cold</option>
+          <option value="electricity">electricity</option><option value="acid">acid</option>
+        </select>
+        <div class="mod" id="ms_mod">+0</div>
+        <div class="btns"><button data-ms="hit">Hit</button><button class="crit" data-ms="crit">Crit</button></div>
+      </div>
+      <div class="atk">
+        <div class="who">Spiritual weapon<small>standard to cast, move to redirect &middot; force</small></div>
+        <div class="mod">1d8+5</div>
+        <div class="btns"><button data-sw="1">Roll</button></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Round</h2>
+    <div class="body">
+      <div class="total">
+        <span class="k">Round total</span><span class="n" id="rtotal">0</span><span class="by" id="rby"></span>
+      </div>
+      <div class="strip">
+        <button class="ghost" id="newround">New round</button>
+        <span id="drtags"></span>
+      </div>
+      <div id="tray" hidden><div class="hint" id="trayhint">click to settle</div></div>
+      <div id="log"><p class="empty">No attacks yet. Roll your d20, then log the result.</p></div>
+    </div>
+  </section>
+</div>
+</div>
+</div>
+
+<script>
+/* ============================ app ============================ */
+window.APP = (function(){
+'use strict';
+var $=function(id){return document.getElementById(id)};
+var rollLocal=function(n,s){var a=[],i;for(i=0;i<n;i++)a.push(1+Math.floor(Math.random()*s));return a};
+var sum=function(a){return a.reduce(function(x,y){return x+y},0)};
+var sgn=function(n){return (n>=0?'+':'')+n};
+var num=function(id){var v=parseInt($(id).value,10);return isNaN(v)?0:v};
+
+var DICE={
+  wpn:{face:'#44505E',pip:'#E8EDF2',label:'scimitar'},
+  holy:{face:'#D9A527',pip:'#3A2A05',label:'holy'},
+  bane:{face:'#9E004F',pip:'#FFE6F1',label:'greater bane'},
+  decap:{face:'#EDE6D6',pip:'#1A1A1A',label:'decapitate'},
+  sw:{face:'#8B7BD9',pip:'#F2EFFF',label:'force'},
+  fire:{face:'#D9541F',pip:'#FFF0E6',label:'fire'},
+  cold:{face:'#7FB6D9',pip:'#0B2430',label:'cold'},
+  electricity:{face:'#E8D15A',pip:'#2A2305',label:'electricity'},
+  acid:{face:'#4E9A2F',pip:'#F0FFE8',label:'acid'}
+};
+
+/* ---- bonus pools: untyped sums, every other type takes the best ---- */
+function build(kind){
+  var P={}, atk = kind==='atk', enh=num('c_enh');
+  function add(t,v,n){ if(!v) return; (P[t]=P[t]||[]).push({name:n,val:v,type:t}); }
+  add('enhancement', enh, 'weapon');
+  if($('b_bane').checked) add('enhancement', enh+2, 'greater bane');
+  if(atk && $('j_just').checked) add('sacred',4,'justice');
+  if(!atk && $('j_dest').checked) add('sacred',6,'destruction');
+  if($('b_hunt').checked) add('sacred',2,"hunter's blessing");
+  if($('b_dp').checked) add('luck',5,'divine power');
+  var bard = atk?num('n_bardatk'):num('n_barddmg'); if(bard) add('morale',bard,'bard');
+  if(atk && $('b_hero').checked) add('morale',2,'heroism');
+  if($('b_wrath').checked) add('morale',1,'wrath');
+  if(atk && $('b_haste').checked) add('untyped',1,'haste');
+  if($('b_smiteab').checked && $('t_undead').checked) add('untyped', atk?12:16,'smite abomination');
+  var m = atk?num('n_matk'):num('n_mdmg'); if(m) add($('n_mtype').value, m, 'misc');
+  return P;
+}
+function resolve(P){
+  var total=0, lines=[];
+  Object.keys(P).forEach(function(type){
+    var arr=P[type];
+    if(type==='untyped'){ arr.forEach(function(e){ total+=e.val; e.applied=true; lines.push(e); }); return; }
+    var best=Math.max.apply(null,arr.map(function(e){return e.val})), taken=false;
+    arr.forEach(function(e){ var ap=(e.val===best&&!taken); if(ap){taken=true;total+=e.val;} e.applied=ap; lines.push(e); });
+  });
+  return {total:total,lines:lines};
+}
+function atkTotal(){ return num('c_bab')+num('c_dex')+num('c_wf')+resolve(build('atk')).total; }
+function drTags(){ return $('j_smite').checked ? ['magic','chaotic','adamantine'] : ['magic','good','adamantine']; }
+
+var log=[], uid=0, mode3d=true, ready3d=false;
+
+function snapshot(){
+  return { stat:num('c_dex')+resolve(build('dmg')).total, dmgLines:resolve(build('dmg')).lines,
+    evil:$('t_evil').checked, bane:$('b_bane').checked, vuln:$('t_vuln').checked,
+    smiteab:$('b_smiteab').checked && $('t_undead').checked, tags:drTags() };
+}
+
+/* ---- a roll request: which dice, which colors ---- */
+function request(kind, energyLvl, s){
+  var r=[];
+  if(kind==='sw'){ r.push({key:'sw',count:1,sides:8}); return r; }
+  r.push({key:'wpn',count:1,sides:6});
+  if(s.evil) r.push({key:'holy',count:2,sides:6});
+  if(s.bane) r.push({key:'bane',count:4,sides:6});
+  if(energyLvl) r.push({key:$('ms_el').value,count:2*energyLvl,sides:6,energy:true});
+  return r;
+}
+
+function makeEntry(name,kind,crit,energyLvl){
+  var s=snapshot();
+  var e={ id:++uid, name:name, kind:kind, crit:crit, miss:false, s:s, pending:true,
+    dice:{}, energyLvl:energyLvl||0, energyKey:energyLvl?$('ms_el').value:null,
+    decap:null, decapDice:null };
+  return e;
+}
+
+function fill(e, res){ e.dice=res; e.pending=false; renderLog(); }
+
+function launch(e){
+  log.push(e);
+  var req = e.miss ? [] : request(e.kind, e.energyLvl, e.s);
+  if(e.miss){ e.pending=false; renderLog(); return; }
+  var canUse3d = mode3d && ready3d && window.__DICE3D && req.every(function(g){return g.sides===6});
+  if(canUse3d){
+    renderLog();
+    window.__DICE3D.roll(req, DICE, function(res){ fill(e,res); });
+  } else {
+    var res={}; req.forEach(function(g){ res[g.key]=rollLocal(g.count,g.sides); });
+    e.tumble=true; fill(e,res);
+    setTimeout(function(){ e.tumble=false; renderLog(); }, 420);
+  }
+}
+
+function entryTotals(e){
+  if(e.miss) return {total:0};
+  var mult = e.crit ? (e.decap==='fail'?3:2) : 1, lines=[], multiplied;
+  var wpn = e.dice[e.kind==='sw'?'sw':'wpn']||[];
+  if(e.kind==='sw'){
+    multiplied = sum(wpn)+5;
+    lines.push({l:'1d8 force ['+wpn.join(', ')+']', v:sum(wpn), k:'sw'});
+    lines.push({l:'caster level', v:5});
+  } else {
+    multiplied = sum(wpn)+e.s.stat;
+    lines.push({l:'1d6 scimitar ['+wpn.join(', ')+']', v:sum(wpn), k:'wpn'});
+    lines.push({l:'dexterity (slashing grace)', v:num('c_dex')});
+    e.s.dmgLines.forEach(function(b){ lines.push({l:b.name+' ('+b.type+')', v:b.val, sup:!b.applied}); });
+  }
+  var base=multiplied*mult, extra=[];
+  if(e.dice.holy) extra.push({l:'holy 2d6 ['+e.dice.holy.join(', ')+']', v:sum(e.dice.holy), k:'holy'});
+  if(e.dice.bane) extra.push({l:'greater bane 4d6 ['+e.dice.bane.join(', ')+']', v:sum(e.dice.bane), k:'bane'});
+  if(e.decapDice) extra.push({l:'decapitate 4d6 ['+e.decapDice.join(', ')+']', v:sum(e.decapDice), k:'decap'});
+  if(e.energyKey && e.dice[e.energyKey]){
+    var ed=e.dice[e.energyKey], tot=sum(ed)+(e.s.vuln?ed.length:0);
+    extra.push({l:'mage strike '+(2*e.energyLvl)+'d6 '+e.energyKey+(e.s.vuln?' +1/die':'')+' ['+ed.join(', ')+']', v:tot, en:true, k:e.energyKey});
+  }
+  var total = base + extra.reduce(function(a,b){return a+b.v},0);
+  return {total:total,mult:mult,multiplied:multiplied,base:base,lines:lines,extra:extra};
+}
+
+function renderAttacks(){
+  var full=atkTotal(), box=$('atkbox'), rows=[
+    {label:'Attack 1',mod:full},{label:'Attack 2',mod:full-5},{label:'Attack 3',mod:full-10}];
+  var dp=$('b_dp').checked, hs=$('b_haste').checked;
+  if(dp||hs) rows.push({label:'Extra attack',mod:full,note:(dp&&hs)?'divine power / haste — granted once':(dp?'divine power':'haste')});
+  box.innerHTML='';
+  rows.forEach(function(r){
+    var d=document.createElement('div'); d.className='atk';
+    d.innerHTML='<div class="who">'+r.label+(r.note?'<small>'+r.note+'</small>':'')+'</div>'+
+      '<div class="mod">'+sgn(r.mod)+'</div><div class="btns">'+
+      '<button data-k="hit">Hit</button><button class="crit" data-k="crit">Crit</button>'+
+      '<button class="miss" data-k="miss">Miss</button></div>';
+    d.querySelector('[data-k="hit"]').onclick=function(){ launch(makeEntry(r.label,'melee',false,0)) };
+    d.querySelector('[data-k="crit"]').onclick=function(){ launch(makeEntry(r.label,'melee',true,0)) };
+    d.querySelector('[data-k="miss"]').onclick=function(){ var e=makeEntry(r.label,'melee',false,0); e.miss=true; launch(e) };
+    box.appendChild(d);
+  });
+  $('ms_mod').textContent = sgn(full + 2*parseInt($('ms_lvl').value,10));
+  $('drtags').innerHTML='<span class="pill">bypasses '+drTags().join(' / ')+'</span>';
+}
+
+function scramble(el, finalVal){
+  var n=0, iv=setInterval(function(){
+    el.textContent = Math.max(1, Math.round(finalVal*(0.4+Math.random())));
+    if(++n>8){ clearInterval(iv); el.textContent=finalVal; el.classList.remove('roll'); }
+  },45);
+}
+
+function renderLog(){
+  var box=$('log');
+  if(!log.length){ box.innerHTML='<p class="empty">No attacks yet. Roll your d20, then log the result.</p>';
+    $('rtotal').textContent='0'; $('rby').textContent=''; return; }
+  box.innerHTML='';
+  var round=0,hits=0,crits=0;
+  log.forEach(function(e){
+    var d=document.createElement('div');
+    d.className='entry'+(e.crit&&!e.miss?' isCrit':'')+(e.miss?' isMiss':'')+(e.pending?' pending':'');
+    if(e.pending){
+      d.innerHTML='<div class="head"><span class="name">'+e.name+'</span>'+
+        (e.crit?'<span class="pill c">critical</span>':'')+'<span class="big roll">rolling…</span></div>';
+      box.appendChild(d); return;
+    }
+    var t=entryTotals(e); round+=t.total;
+    if(!e.miss){ hits++; if(e.crit) crits++; }
+    var pills='';
+    if(e.miss) pills='<span class="pill">miss</span>';
+    else{
+      if(e.crit) pills+='<span class="pill c">critical &times;'+t.mult+'</span><span class="pill dr">exploit weakness &mdash; ignores all DR</span>';
+      else if(e.s.smiteab || e.energyLvl) pills+='<span class="pill dr">bypasses all DR</span>';
+      else pills+='<span class="pill">'+(e.kind==='sw'?'force':e.s.tags.join(' / '))+'</span>';
+    }
+    var h='<div class="head"><span class="name">'+e.name+'</span>'+pills+
+      '<span class="big'+(e.tumble?' roll':'')+'" data-big="'+e.id+'">'+t.total+'</span></div>';
+    if(!e.miss){
+      h+='<div class="bd">';
+      t.lines.forEach(function(l){
+        var sw = l.k?'<span class="swatch" style="background:'+DICE[l.k].face+'"></span>':'';
+        h+='<div class="'+(l.sup?'sup':'')+'"><span class="l">'+sw+l.l+'</span><span class="v">'+sgn(l.v)+'</span></div>';
+      });
+      if(t.mult>1) h+='<div><span class="l">subtotal &times;'+t.mult+'</span><span class="v">'+t.multiplied+' &rarr; '+t.base+'</span></div>';
+      t.extra.forEach(function(l){
+        var sw = l.k?'<span class="swatch" style="background:'+DICE[l.k].face+'"></span>':'';
+        h+='<div class="'+(l.en?'en':'')+'"><span class="l">'+sw+l.l+'</span><span class="v">'+sgn(l.v)+'</span></div>';
+      });
+      h+='<div class="tot"><span class="l">total</span><span class="v">'+t.total+'</span></div></div>';
+      if(e.energyLvl) h+='<p class="note">Energy is subject to resistance and immunity; everything else bypasses all damage reduction.</p>';
+      if(e.crit && e.kind!=='sw'){
+        h+='<div class="decap"><span>Decapitate? <em style="font-style:normal;color:var(--faint)">immediate action</em></span>'+
+          '<button data-dc="fail" aria-pressed="'+(e.decap==='fail')+'">Failed Fort &times;3</button>'+
+          '<button data-dc="save" aria-pressed="'+(e.decap==='save')+'">Saved &times;2</button>'+
+          '<button data-dc="none" aria-pressed="'+(!e.decap)+'">Not cast</button></div>';
+      }
+    }
+    d.innerHTML=h;
+    d.querySelectorAll('[data-dc]').forEach(function(b){
+      b.onclick=function(){
+        var v=b.getAttribute('data-dc');
+        if(v==='none'){ e.decap=null; e.decapDice=null; renderLog(); return; }
+        e.decap=v;
+        if(!e.decapDice){
+          if(mode3d && ready3d && window.__DICE3D){
+            e.decapDice=[]; renderLog();
+            window.__DICE3D.roll([{key:'decap',count:4,sides:6}], DICE, function(res){ e.decapDice=res.decap; renderLog(); });
+          } else { e.decapDice=rollLocal(4,6); renderLog(); }
+        } else renderLog();
+      };
+    });
+    box.appendChild(d);
+    if(e.tumble){ var big=d.querySelector('[data-big]'); if(big) scramble(big, t.total); }
+  });
+  $('rtotal').textContent=round;
+  $('rby').textContent=hits+' hit'+(hits===1?'':'s')+(crits?' · '+crits+' crit'+(crits===1?'':'s'):'');
+}
+
+/* ---- wiring ---- */
+var jboxes=[].slice.call(document.querySelectorAll('.j'));
+function jlimit(){
+  var on=jboxes.filter(function(b){return b.checked});
+  $('jcount').textContent=on.length;
+  jboxes.forEach(function(b){ b.disabled=(!b.checked && on.length>=3) });
+}
+document.addEventListener('change',function(){ jlimit(); renderAttacks(); renderLog(); });
+document.addEventListener('input',function(ev){ if(ev.target.type==='number'){ renderAttacks(); renderLog(); } });
+$('newround').onclick=function(){ log=[]; uid=0; renderLog(); if(window.__DICE3D) window.__DICE3D.clear(); };
+document.querySelector('[data-ms="hit"]').onclick=function(){ launch(makeEntry('Mage strike','ms',false,parseInt($('ms_lvl').value,10))) };
+document.querySelector('[data-ms="crit"]').onclick=function(){ launch(makeEntry('Mage strike','ms',true,parseInt($('ms_lvl').value,10))) };
+document.querySelector('[data-sw="1"]').onclick=function(){ launch(makeEntry('Spiritual weapon','sw',false,0)) };
+
+$('theme').onclick=function(){
+  var r=document.documentElement;
+  var dark=r.getAttribute('data-theme')==='dark' ||
+    (!r.getAttribute('data-theme') && matchMedia('(prefers-color-scheme: dark)').matches);
+  r.setAttribute('data-theme', dark?'light':'dark');
+  if(window.__DICE3D) window.__DICE3D.theme();
+};
+function setMode(on){
+  if(on && !ready3d){ mode3d=false; $('dicemode').textContent='Dice: fast'; $('dicemode').title='3D dice library did not load'; return; }
+  mode3d=on;
+  $('dicemode').textContent = on?'Dice: 3D':'Dice: fast';
+  if(!on && window.__DICE3D) window.__DICE3D.clear();
+}
+$('dicemode').onclick=function(){ setMode(!mode3d) };
+
+/* default: fast mode on touch devices or when motion is reduced */
+var prefer3d = !(matchMedia('(pointer: coarse)').matches || matchMedia('(prefers-reduced-motion: reduce)').matches);
+setMode(prefer3d);
+jlimit(); renderAttacks();
+launch(makeEntry('Attack 1','melee',false,0));
+
+return { ready:function(){ ready3d=true; setMode(prefer3d); } };
+})();
+</script>
+
+
+
+<style>
+#tray .scene{position:relative;height:262px;overflow:hidden;perspective:1050px;perspective-origin:50% 36%}
+#tray .table{position:absolute;left:50%;top:63%;width:0;height:0;transform-style:preserve-3d;transform:rotateX(62deg)}
+#tray .die{position:absolute;left:0;top:0;width:34px;height:34px;margin:-17px 0 0 -17px;transform-style:preserve-3d}
+#tray .face{position:absolute;inset:0;border-radius:6px;background:var(--fc);
+  box-shadow:inset 0 0 0 1px rgba(0,0,0,.22), inset 0 3px 7px rgba(255,255,255,.22), inset 0 -3px 7px rgba(0,0,0,.14)}
+#tray .pip{position:absolute;width:19%;height:19%;border-radius:50%;background:var(--pc);transform:translate(-50%,-50%)}
+#tray .sh{position:absolute;left:0;top:0;border-radius:50%;background:#000;margin:-17px 0 0 -17px;
+  width:34px;height:34px;filter:blur(4px)}
+</style>
+<script>
+/* ============ dice tray: own rigid-body sim, CSS 3D cubes, no libraries ============ */
+(function(){
+'use strict';
+var S=34, H=S/2, ZL=96, G=2600, E=.3, MU=.36;
+/* local face normals -> pip value; opposite faces sum to 7 */
+var FACES=[[1,0,0,1],[-1,0,0,6],[0,1,0,2],[0,-1,0,5],[0,0,1,3],[0,0,-1,4]];
+/* phys axis -> css cube face, because css y points down and our depth axis is css y */
+var CSSFACE={1:'px',6:'nx',2:'pz',5:'nz',3:'ny',4:'py'};
+var FACETF={px:'rotateY(90deg) translateZ(17px)',nx:'rotateY(-90deg) translateZ(17px)',
+  py:'rotateX(-90deg) translateZ(17px)',ny:'rotateX(90deg) translateZ(17px)',
+  pz:'translateZ(17px)',nz:'rotateY(180deg) translateZ(17px)'};
+var PIPS={1:[[50,50]],2:[[26,26],[74,74]],3:[[26,26],[50,50],[74,74]],
+  4:[[26,26],[74,26],[26,74],[74,74]],5:[[26,26],[74,26],[50,50],[26,74],[74,74]],
+  6:[[26,26],[74,26],[26,50],[74,50],[26,74],[74,74]]};
+var CORNERS=[];(function(){for(var a=-1;a<2;a+=2)for(var b=-1;b<2;b+=2)for(var c=-1;c<2;c+=2)CORNERS.push([a*H,b*H,c*H]);})();
+
+var ORD=[0,1,2,3,4,5,6,7];   /* contact order is shuffled each step: a fixed order biases the solver */
+function qmul(a,b){return[a[0]*b[0]-a[1]*b[1]-a[2]*b[2]-a[3]*b[3],
+  a[0]*b[1]+a[1]*b[0]+a[2]*b[3]-a[3]*b[2],
+  a[0]*b[2]-a[1]*b[3]+a[2]*b[0]+a[3]*b[1],
+  a[0]*b[3]+a[1]*b[2]-a[2]*b[1]+a[3]*b[0]];}
+function qnorm(q){var l=Math.hypot(q[0],q[1],q[2],q[3])||1;return[q[0]/l,q[1]/l,q[2]/l,q[3]/l];}
+function qmat(q){var w=q[0],x=q[1],y=q[2],z=q[3];
+  return[[1-2*(y*y+z*z),2*(x*y-w*z),2*(x*z+w*y)],
+         [2*(x*y+w*z),1-2*(x*x+z*z),2*(y*z-w*x)],
+         [2*(x*z-w*y),2*(y*z+w*x),1-2*(x*x+y*y)]];}
+function mv(m,v){return[m[0][0]*v[0]+m[0][1]*v[1]+m[0][2]*v[2],
+  m[1][0]*v[0]+m[1][1]*v[1]+m[1][2]*v[2], m[2][0]*v[0]+m[2][1]*v[1]+m[2][2]*v[2]];}
+function cross(a,b){return[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]];}
+function randQ(){ /* Shoemake: a uniformly distributed random rotation */
+  var u1=Math.random(),u2=Math.random()*6.283185307,u3=Math.random()*6.283185307,
+      a=Math.sqrt(1-u1),b=Math.sqrt(u1);
+  return [a*Math.sin(u2), a*Math.cos(u2), b*Math.sin(u3), b*Math.cos(u3)];
+}
+function rnd(n){return (Math.random()*2-1)*n;}
+
+var el,hint,scene,table,dice=[],raf=null,live=false,done=null,still=0,retries=0,t0=0,XL=260;
+var INV_I = 6/(S*S);   /* a uniform cube's inertia is isotropic: I = m s^2 / 6, mass = 1 */
+
+function buildDie(face,pip){
+  var d=document.createElement('div'); d.className='die';
+  d.style.setProperty('--fc',face); d.style.setProperty('--pc',pip);
+  FACES.forEach(function(f){
+    var key=CSSFACE[f[3]], el=document.createElement('div');
+    el.className='face'; el.style.transform=FACETF[key];
+    PIPS[f[3]].forEach(function(p){
+      var s=document.createElement('span'); s.className='pip';
+      s.style.left=p[0]+'%'; s.style.top=p[1]+'%'; el.appendChild(s);
+    });
+    d.appendChild(el);
+  });
+  return d;
+}
+function mount(){
+  el=document.getElementById('tray'); hint=document.getElementById('trayhint');
+  scene=document.createElement('div'); scene.className='scene';
+  table=document.createElement('div'); table.className='table';
+  scene.appendChild(table); el.insertBefore(scene,hint);
+  el.addEventListener('click',function(){ if(live) settleNow(); });
+  measure();
+  window.addEventListener('resize',measure);
+}
+function measure(){ XL=Math.max(140,(el.clientWidth||600)/2-14); }
+
+function contact(d,n,depth,r){
+  d.p[1]+=n[1]*depth*0.42; d.p[0]+=n[0]*depth*0.42; d.p[2]+=n[2]*depth*0.42;
+  var w=cross(d.w,r);
+  var vp=[d.v[0]+w[0], d.v[1]+w[1], d.v[2]+w[2]];
+  var vn=vp[0]*n[0]+vp[1]*n[1]+vp[2]*n[2];
+  if(vn>=0) return;
+  var rn=cross(r,n), k=1+INV_I*(rn[0]*rn[0]+rn[1]*rn[1]+rn[2]*rn[2]);
+  var j=-(1+E)*vn/k;
+  d.v[0]+=j*n[0]; d.v[1]+=j*n[1]; d.v[2]+=j*n[2];
+  var ang=cross(r,[j*n[0],j*n[1],j*n[2]]);
+  d.w[0]+=INV_I*ang[0]; d.w[1]+=INV_I*ang[1]; d.w[2]+=INV_I*ang[2];
+  /* coulomb friction along the tangent */
+  var t=[vp[0]-vn*n[0], vp[1]-vn*n[1], vp[2]-vn*n[2]];
+  var tl=Math.hypot(t[0],t[1],t[2]);
+  if(tl>0.01){
+    t=[t[0]/tl,t[1]/tl,t[2]/tl];
+    var rt=cross(r,t), kt=1+INV_I*(rt[0]*rt[0]+rt[1]*rt[1]+rt[2]*rt[2]);
+    var jt=Math.max(-MU*j, Math.min(MU*j, -tl/kt));
+    d.v[0]+=jt*t[0]; d.v[1]+=jt*t[1]; d.v[2]+=jt*t[2];
+    var at=cross(r,[jt*t[0],jt*t[1],jt*t[2]]);
+    d.w[0]+=INV_I*at[0]; d.w[1]+=INV_I*at[1]; d.w[2]+=INV_I*at[2];
+  }
+}
+function step(dt){
+  for(var i=0;i<dice.length;i++){
+    var d=dice[i];
+    if(d.sleep) continue;
+    d.v[1]-=G*dt;
+    d.p[0]+=d.v[0]*dt; d.p[1]+=d.v[1]*dt; d.p[2]+=d.v[2]*dt;
+    var wq=[0,d.w[0]*dt*0.5,d.w[1]*dt*0.5,d.w[2]*dt*0.5];
+    d.q=qnorm([d.q[0]+ (wq[0]*d.q[0]-wq[1]*d.q[1]-wq[2]*d.q[2]-wq[3]*d.q[3]),
+               d.q[1]+ (wq[0]*d.q[1]+wq[1]*d.q[0]+wq[2]*d.q[3]-wq[3]*d.q[2]),
+               d.q[2]+ (wq[0]*d.q[2]-wq[1]*d.q[3]+wq[2]*d.q[0]+wq[3]*d.q[1]),
+               d.q[3]+ (wq[0]*d.q[3]+wq[1]*d.q[2]-wq[2]*d.q[1]+wq[3]*d.q[0])]);
+    var m=qmat(d.q);
+    for(var s=7;s>0;s--){ var t=(Math.random()*(s+1))|0, tmp=ORD[s]; ORD[s]=ORD[t]; ORD[t]=tmp; }
+    for(var c=0;c<8;c++){
+      var r=mv(m,CORNERS[ORD[c]]);
+      var wx=d.p[0]+r[0], wy=d.p[1]+r[1], wz=d.p[2]+r[2];
+      if(wy<0) contact(d,[0,1,0],-wy,r);
+      if(wx<-XL) contact(d,[1,0,0],-XL-wx,r);
+      if(wx> XL) contact(d,[-1,0,0],wx-XL,r);
+      if(wz<-ZL) contact(d,[0,0,1],-ZL-wz,r);
+      if(wz> ZL) contact(d,[0,0,-1],wz-ZL,r);
+    }
+    d.v[0]*=0.994; d.v[1]*=0.994; d.v[2]*=0.994;
+    d.w[0]*=0.991; d.w[1]*=0.991; d.w[2]*=0.991;
+    if(Math.hypot(d.v[0],d.v[1],d.v[2])<5 && Math.hypot(d.w[0],d.w[1],d.w[2])<0.5){
+      if(++d.calm>26){ d.sleep=true; d.v=[0,0,0]; d.w=[0,0,0]; }
+    } else d.calm=0;
+  }
+}
+function draw(){
+  for(var i=0;i<dice.length;i++){
+    var d=dice[i], R=qmat(d.q);
+    /* css basis: x -> x, depth z -> -y, height y -> z */
+    var A=[R[0],[-R[2][0],-R[2][1],-R[2][2]],R[1]];
+    var c=[[A[0][0],-A[0][2],A[0][1]],[A[1][0],-A[1][2],A[1][1]],[A[2][0],-A[2][2],A[2][1]]];
+    d.node.style.transform='translate3d('+d.p[0].toFixed(1)+'px,'+(-d.p[2]).toFixed(1)+'px,'+d.p[1].toFixed(1)+'px) '+
+      'matrix3d('+c[0][0].toFixed(4)+','+c[1][0].toFixed(4)+','+c[2][0].toFixed(4)+',0,'+
+      c[0][1].toFixed(4)+','+c[1][1].toFixed(4)+','+c[2][1].toFixed(4)+',0,'+
+      c[0][2].toFixed(4)+','+c[1][2].toFixed(4)+','+c[2][2].toFixed(4)+',0,0,0,0,1)';
+    var lift=Math.max(0,Math.min(1,d.p[1]/170)), sc=1+lift*1.5;
+    d.shadow.style.transform='translate3d('+d.p[0].toFixed(1)+'px,'+(-d.p[2]).toFixed(1)+'px,0.4px) scale('+sc.toFixed(2)+')';
+    d.shadow.style.opacity=(0.3*(1-lift*0.75)).toFixed(2);
+  }
+}
+function top(d){
+  var m=qmat(d.q), best=-2, val=1;
+  for(var i=0;i<FACES.length;i++){
+    var n=mv(m,[FACES[i][0],FACES[i][1],FACES[i][2]]);
+    if(n[1]>best){ best=n[1]; val=FACES[i][3]; }
+  }
+  return {val:val,align:best};
+}
+function allStill(){ return dice.every(function(d){ return d.sleep; }); }
+function read(){ var r={}; dice.forEach(function(d){ (r[d.key]=r[d.key]||[]).push(top(d).val); }); return r; }
+function finish(){
+  var bad=dice.filter(function(d){ return top(d).align<0.9; });
+  if(bad.length && retries<2){
+    retries++; still=0;
+    bad.forEach(function(d){ d.sleep=false; d.calm=0;
+      d.v=[rnd(90),240,rnd(90)]; d.w=[rnd(13),rnd(13),rnd(13)]; });
+    return false;
+  }
+  live=false; hint.textContent='';
+  if(done){ var c=done; done=null; c(read()); }
+  return true;
+}
+function settleNow(){
+  var guard=0,i;
+  for(i=0;i<2600 && !allStill();i++) step(1/120);
+  while(!finish() && guard++<3){ for(i=0;i<1200 && !allStill();i++) step(1/120); }
+  draw();
+}
+function loop(){
+  raf=requestAnimationFrame(loop);
+  if(live){ step(1/120); step(1/120); }
+  draw();
+  if(!live) return;
+  var t=performance.now()-t0;
+  if(t>380 && allStill()){ if(++still>4) finish(); } else still=0;
+  if(t>7000) settleNow();
+}
+function clear(){ dice.forEach(function(d){ d.node.remove(); d.shadow.remove(); }); dice=[]; }
+
+function roll(groups,palette,cb){
+  if(!scene) mount();
+  el.hidden=false; measure(); clear();
+  done=cb; still=0; retries=0; t0=performance.now(); live=true;
+  hint.textContent='click to settle';
+  groups.forEach(function(g){
+    var p=palette[g.key]||{face:'#888888',pip:'#ffffff'};
+    for(var n=0;n<g.count;n++){
+      var node=buildDie(p.face,p.pip);
+      var sh=document.createElement('div'); sh.className='sh';
+      table.appendChild(sh); table.appendChild(node);
+      dice.push({ key:g.key, node:node, shadow:sh, calm:0, sleep:false,
+        p:[rnd(XL-40), 150+Math.random()*170, rnd(ZL-26)],
+        v:[rnd(170), -260-Math.random()*160, rnd(130)],
+        w:[rnd(15),rnd(15),rnd(15)],
+        q:randQ() });
+    }
+  });
+  if(!raf) loop();
+}
+window.__DICE3D={ roll:roll, theme:function(){},
+  clear:function(){ if(!scene) return; clear(); el.hidden=true; live=false;
+    if(raf){ cancelAnimationFrame(raf); raf=null; } } };
+if(window.APP && window.APP.ready) window.APP.ready();
+})();
+</script>
